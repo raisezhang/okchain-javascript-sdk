@@ -7,32 +7,23 @@
 import * as crypto from "./crypto"
 import Transaction from "./transaction"
 import HttpProxy from "./httpProxy"
-
+import { formatNumber } from "./utils"
 
 const apiPath = {
-    //rest server
     txs: "/okchain/v1/txs",
     queryAccount: "/okchain/v1/auth/accounts",
 }
 
-const chainId = "okchain"
 const bech32Head = "okchain"
-const mode = "block"
-const nativeDenom = "okt"
-var defaultFee = {
-    amount: [{
-        amount: "0.02000000",
-        denom: nativeDenom,
 
-    }],
-    gas: "200000",
-}
+// const mainnetChainId = ""
+const testnetChainId = "okchain"
 
-
-export const GetClient = async (privateKey, url) => {
-    const client = new OKChainClient(url)
-    client.setAccountInfo(privateKey)
-    return client
+const getTransactionToken = function (amount, denom) {
+    return {
+        amount: formatNumber(amount),
+        denom,
+    }
 }
 
 /**
@@ -40,14 +31,32 @@ export const GetClient = async (privateKey, url) => {
  */
 export class OKChainClient {
     /**
-     * @param {string} url
+     * @param {String} url rpc url
+     * @param {String} [chainId=okchain] chain id
      */
-    constructor(url) {
+    constructor(url, chainId = testnetChainId) {
         if (!url) {
             throw new Error("null url")
         }
         this.httpClient = new HttpProxy(url)
-        this.mode = mode
+        this.nativeDenom = chainId === testnetChainId ? "tokt" : "okt"
+        this.defaultFee = {
+            amount: [getTransactionToken(0.02, this.nativeDenom)],
+            gas: "200000",
+        };
+        this.mode = "block"
+        this.chainId = chainId
+    }
+
+    /**
+     * get an instance of OKChainClient
+     * @param {String} privateKey private key
+     * @param {String} url rpc url
+     */
+    static getClient(privateKey, url) {
+        const client = new OKChainClient(url)
+        client.setAccountInfo(privateKey)
+        return client
     }
 
     /**
@@ -75,7 +84,6 @@ export class OKChainClient {
         return this
     }
 
-
     /**
      * Send SendTransaction.
      * @param {String} to To Address
@@ -87,17 +95,10 @@ export class OKChainClient {
      */
 
     async sendSendTransaction(to, amount, denom, memo = "", sequenceNumber = null) {
-
-        const coin = {
-            amount: this.formatNumber(amount),
-            denom: denom,
-
-        }
-
         const msg = [{
             type: "okchain/token/MsgTransfer",
             value: {
-                amount: [coin],
+                amount: [ getTransactionToken(amount, denom) ],
                 from_address: this.address,
                 to_address: to,
             },
@@ -105,8 +106,7 @@ export class OKChainClient {
 
         const signMsg = msg
 
-
-        const signedTx = await this.buildTransaction(msg, signMsg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, signMsg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -137,29 +137,10 @@ export class OKChainClient {
         })
         signMsg = msg
 
-        const signedTx = await this.buildTransaction(msg, signMsg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, signMsg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
-
-    /*
-     * format number
-     */
-    formatNumber(num) {
-        const str = String(num);
-        let retStr = '';
-        if (str.indexOf('.') >= 0) {
-            let appendix = '';
-            const len = 8 - str.split('.')[1].length;
-            for (let i = 0; i < len; i++) {
-                appendix += '0';
-            }
-            retStr = str + appendix;
-        } else {
-            retStr += `${str}.00000000`;
-        }
-        return retStr;
-    };
 
     /**
      * Send PlaceOrderTransaction.
@@ -173,9 +154,9 @@ export class OKChainClient {
      */
     async sendPlaceOrderTransaction(product, side, price, quantity, memo = "", sequence = null) {
         var order_items = [{
-            price: this.formatNumber(price),
+            price: formatNumber(price),
             product: product,
-            quantity: this.formatNumber(quantity),
+            quantity: formatNumber(quantity),
             side: side,
         }]
         return this.sendPlaceOrdersTransaction(order_items, memo, sequence)
@@ -192,8 +173,7 @@ export class OKChainClient {
         }]
         const signMsg = placeOrderMsg
 
-
-        const signedTx = await this.buildTransaction(placeOrderMsg, signMsg, memo, defaultFee, sequence)
+        const signedTx = await this.buildTransaction(placeOrderMsg, signMsg, memo, this.defaultFee, sequence)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -216,7 +196,7 @@ export class OKChainClient {
 
         const params = {
             account_number: parseInt(this.account_number),
-            chain_id: chainId,
+            chain_id: this.chainId,
             memo: memo,
             msg,
             sequence: sequenceNumber,
@@ -345,7 +325,7 @@ export class OKChainClient {
             }
         }]
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -363,15 +343,12 @@ export class OKChainClient {
         const msg = [{
             type: "okchain/token/MsgBurn",
             value: {
-                amount: {
-                    amount: this.formatNumber(amount),
-                    denom: token
-                },
+                amount: getTransactionToken(amount, token),
                 owner: this.address
             }
         }]
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -389,15 +366,12 @@ export class OKChainClient {
         const msg = [{
             type: "okchain/token/MsgMint",
             value: {
-                amount: {
-                    amount: this.formatNumber(amount),
-                    denom: token
-                },
+                amount: getTransactionToken(amount, token),
                 owner: this.address
             }
         }]
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -422,7 +396,7 @@ export class OKChainClient {
             },
         }]
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -442,14 +416,14 @@ export class OKChainClient {
         const msg = [{
             type: "okchain/dex/MsgList",
             value: {
-                init_price: this.formatNumber(init_price),
+                init_price: formatNumber(init_price),
                 list_asset: base_asset,
                 owner: this.address,
                 quote_asset: quote_asset,
             },
         }]
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -465,22 +439,16 @@ export class OKChainClient {
 
     async sendAddProductDepositTransaction(amount, product, memo = "", sequenceNumber = null) {
 
-        const coin = {
-            amount: this.formatNumber(amount),
-            denom: nativeDenom,
-        }
-
         const msg = [{
             type: "okchain/dex/MsgDeposit",
             value: {
-                amount: coin,
+                amount: getTransactionToken(amount, this.nativeDenom),
                 depositor: this.address,
                 product: product,
             },
         }]
 
-
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
@@ -496,22 +464,88 @@ export class OKChainClient {
 
     async sendWithdrawProductDepositTransaction(amount, product, memo = "", sequenceNumber = null) {
 
-        const coin = {
-            amount: this.formatNumber(amount),
-            denom: nativeDenom,
-        }
-
         const msg = [{
             type: "okchain/dex/MsgWithdraw",
             value: {
-                amount: coin,
+                amount: getTransactionToken(amount, this.nativeDenom),
                 depositor: this.address,
                 product: product,
             },
         }]
 
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
+        const res = await this.sendTransaction(signedTx)
+        return res
+    }
 
-        const signedTx = await this.buildTransaction(msg, msg, memo, defaultFee, sequenceNumber)
+    /**
+     * Send sendStakingDelegateTransaction.
+     * @param {String} quantity
+     * @param {String} delegator_address
+     * @param {String} memo
+     * @param {Number} sequenceNumber
+     * @return {Object} response
+     */
+
+    async sendStakingDelegateTransaction(quantity, delegator_address, memo = "", sequenceNumber = null) {
+
+        const msg = [{
+            type: "okchain/staking/MsgDelegate",
+            value: {
+                delegator_address,
+                quantity: getTransactionToken(quantity, this.nativeDenom),
+            },
+        }]
+
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
+        const res = await this.sendTransaction(signedTx)
+        return res
+    }
+
+    /**
+     * Send sendStakingUnDelegateTransaction.
+     * @param {String} quantity
+     * @param {String} delegator_address
+     * @param {String} memo
+     * @param {Number} sequenceNumber
+     * @return {Object} response
+     */
+
+    async sendStakingUnDelegateTransaction(quantity, delegator_address, memo = "", sequenceNumber = null) {
+
+        const msg = [{
+            type: "okchain/staking/MsgUnDelegate",
+            value: {
+                delegator_address,
+                quantity: getTransactionToken(quantity, this.nativeDenom),
+            },
+        }]
+
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
+        const res = await this.sendTransaction(signedTx)
+        return res
+    }
+
+    /**
+     * Send sendStakingVoteTransaction.
+     * @param {String} validator_addresses
+     * @param {String} delegator_address
+     * @param {String} memo
+     * @param {Number} sequenceNumber
+     * @return {Object} response
+     */
+
+    async sendStakingVoteTransaction(validator_addresses, delegator_address, memo = "", sequenceNumber = null) {
+
+        const msg = [{
+            type: "okchain/staking/MsgVote",
+            value: {
+                delegator_address,
+                validator_addresses,
+            },
+        }]
+
+        const signedTx = await this.buildTransaction(msg, msg, memo, this.defaultFee, sequenceNumber)
         const res = await this.sendTransaction(signedTx)
         return res
     }
