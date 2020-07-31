@@ -528,7 +528,7 @@ export class OKChainClient {
 
     /**
      * Send sendStakingVoteTransaction.
-     * @param {String} validator_addresses
+     * @param {[String]} validator_addresses
      * @param {String} delegator_address
      * @param {String} memo
      * @param {Number} sequenceNumber
