@@ -52,9 +52,10 @@ export class OKChainClient {
      * get an instance of OKChainClient
      * @param {String} privateKey private key
      * @param {String} url rpc url
+     * @param {String} [chainId=okchain] chain id
      */
-    static getClient(privateKey, url) {
-        const client = new OKChainClient(url)
+    static getClient(privateKey, url, chainId = testnetChainId) {
+        const client = new OKChainClient(url, chainId)
         client.setAccountInfo(privateKey)
         return client
     }
